@@ -11,7 +11,6 @@ import (
 	"github.com/micro/go-micro/util/log"
 )
 
-
 func ExcelChanger(filePath string) {
 	ifExist, _ :=  CheckPathExists(filePath)
 	if !ifExist{
@@ -131,6 +130,32 @@ func getInt64(decs, value string)(int64, error){
 		return dft, nil
 	}
 	i, err := strconv.ParseInt(value, 10, 64)
+	if err != nil{
+		panic(value + "出现错误" + err.Error())
+		return dft, err
+	}
+	return i, nil
+}
+
+func getFloat32(decs, value string)(float32, error){
+	dft := (float32)(0)
+	if value==""{
+		return dft, nil
+	}
+	i, err := strconv.ParseFloat(value, 32)
+	if err != nil{
+		panic(value + "出现错误" + err.Error())
+		return dft, err
+	}
+	return (float32)(i), nil
+}
+
+func getFloat64(decs, value string)(float64, error){
+	dft := (float64)(0)
+	if value==""{
+		return dft, nil
+	}
+	i, err := strconv.ParseFloat(value, 64)
 	if err != nil{
 		panic(value + "出现错误" + err.Error())
 		return dft, err
@@ -302,12 +327,16 @@ func changeString2Type(Xfile *xlsx.File, cellStrValue, valtype , desc string)(in
 		value, err = getIntList(desc, cellStrValue)
 	case "[]int64":
 		value, err = getInt64List(desc, cellStrValue)
-	case "int":
+	case "int32":
 		value, err = getInt(desc, cellStrValue)
 	case "int64":
 		value, err = getInt64(desc, cellStrValue)
 	case "string":
 		value = cellStrValue
+	case "float32":
+		value, err = getFloat32(desc, cellStrValue)
+	case "float64":
+		value, err = getFloat64(desc, cellStrValue)
 	case "mapInterface":
 		value, err = Str2Map(desc, cellStrValue)
 	case "[]string":
@@ -320,35 +349,6 @@ func changeString2Type(Xfile *xlsx.File, cellStrValue, valtype , desc string)(in
 		value = cellStrValue
 	}
 	return value, err
-}
-
-func getDefaultVal(valtype string)interface{}{
-	//对于空值设置初始值
-	valtype = strings.Replace(valtype, " ", "", -1)
-	var value interface{}
-	switch valtype {
-	case "[]int32":
-		value = 0
-	case "[]int64":
-		value = []int64{}
-	case "int":
-		value = 0
-	case "int64":
-		value = (int64)(0)
-	case "string":
-		value = ""
-	case "mapInterface":
-		value = map[string]interface{}{}
-	case "[]string":
-		value = []string{}
-	case "[]SheetInfo":
-		value = []interface{}{}
-	case "SheetInfo":
-		value = map[string]interface{}{}
-	default:
-		value = ""
-	}
-	return value
 }
 
 func splitSheetInfo(sheetValue string)(map[string]string){
@@ -377,17 +377,6 @@ func splitSheetInfo(sheetValue string)(map[string]string){
 		}
 	}
 	return infosMap
-}
-
-func CheckPathExists(path string) (bool, error) {
-	_, err := os.Stat(path)
-	if err == nil {
-		return true, nil
-	}
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	return false, err
 }
 
 func StoreWithJson(sheetName string, result interface{})error{
