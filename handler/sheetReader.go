@@ -1,30 +1,24 @@
 package handler
 
-
 import (
-"fmt"
-"github.com/tealeg/xlsx"
-"strings"
-"strconv"
-"encoding/json"
-"errors"
-"os"
+	"fmt"
+	"github.com/tealeg/xlsx"
+	"strings"
+	"strconv"
+	"encoding/json"
+	"errors"
+	"os"
+	"github.com/micro/go-micro/util/log"
 )
 
-type sheetInfo1 struct {
-	ID int
-}
 
-type sheetInfo struct {
-	ID int
-	SheetInfoMap sheetInfo1
-	SheetInfoList []sheetInfo1
-}
-
-func Change() {
-	test := `{"test0":1, "test1":2, "test3":{"test4":"4"}, "test5":[1,2,3,4], "test6":"testStr"}`
-	getStrMap("", test)
-	excelFileName := "1.xlsx"
+func ExcelChanger(filePath string) {
+	ifExist, _ :=  CheckPathExists(filePath)
+	if !ifExist{
+		panic("配表文件不存在请检查 ------ > "+ filePath)
+		return
+	}
+	excelFileName := filePath
 	var xlFile *xlsx.File
 	var err error
 	xlFile, err = xlsx.OpenFile(excelFileName)
@@ -32,23 +26,12 @@ func Change() {
 		panic(err)
 	}
 
-	//测试区
-	testThis(xlFile)
-
 	for _, sheet := range xlFile.Sheets {
-
-		for i:= 0;i<len(sheet.Rows);i++{
-			for j := 0 ; j<len(sheet.Rows[i].Cells);j++{
-				//fmt.Println("输出： ", sheet.Rows[i].Cells[j].String())
-			}
-		}
-
 		//第一个先把所有数据的Key得到
 		if strings.HasPrefix(sheet.Name, "@"){
-			fmt.Println("=============此表为子表不做处理")
+			fmt.Println("此表为子表不做处理------> ",sheet.Name)
 			continue
 		}
-
 		var sheetResult []interface{}
 		sheetResult = make([]interface{}, 0)
 		for irow, row := range sheet.Rows {
@@ -61,7 +44,7 @@ func Change() {
 					ifAdd = false
 					continue
 				}
-				//开始构造结果体
+				//开始构造结果体， 判断是否数据缺失
 				if len(sheet.Rows[0].Cells) < col+ 1{
 					panic("表格式错误")
 				}
@@ -75,32 +58,19 @@ func Change() {
 					rowRessult[key] = value
 				}
 			}
-			if ifAdd{
+			if ifAdd{//判断是否加入result集合
 				sheetResult = append(sheetResult, rowRessult)
 				var test sheetInfo
 				jsonStr, _ := json.Marshal(rowRessult)
 				json.Unmarshal([]byte(jsonStr), &test)
-				fmt.Println("struct : -------> ", test)
+				fmt.Println("scan: ", test)
 			}
 		}
-		for _, j := range sheetResult{
-			fmt.Println("sheetResult: ", j)
+		err = StoreWithJson(sheet.Name, sheetResult)
+		if err != nil{
+			panic(err)
 		}
-		b, err := json.Marshal(sheetResult)
-		if err != nil {
-			fmt.Println("json.Marshal failed:", err)
-			return
-		}
-
-		f,err := os.Create("./test.json")
-		defer f.Close()
-		if err !=nil {
-			fmt.Println(err.Error())
-		} else {
-			f.Write([]byte(b))
-
-		}
-		fmt.Println("b:", string(b))
+		log.Log("sheet表 -----> ["+ sheet.Name + "] 处理完毕！"  )
 	}
 }
 
@@ -115,12 +85,11 @@ func getIntList(decs, value string)([]int, error){
 		}
 		intStr, err := strconv.Atoi(j)
 		if err != nil{
-			//fmt.Println("strList", strList)
+			panic(value + "出现错误" + err.Error())
 			return nil, err
 		}
 		intList = append(intList,intStr)
 	}
-	//fmt.Println("intList: ", intList)
 	return intList, nil
 }
 
@@ -135,12 +104,11 @@ func getInt64List(decs, value string)([]int64, error){
 		}
 		intStr, err := strconv.ParseInt(j, 10, 64)
 		if err != nil{
-			//fmt.Println("strList", strList)
+			panic(value + "出现错误" + err.Error())
 			return nil, err
 		}
 		intList = append(intList,intStr)
 	}
-	//fmt.Println("intList: ", intList)
 	return intList, nil
 }
 
@@ -151,6 +119,7 @@ func getInt(decs, value string)(int, error){
 	}
 	i, err := strconv.Atoi(value)
 	if err != nil{
+		panic(value + "出现错误" + err.Error())
 		return dft, err
 	}
 	return i, nil
@@ -163,15 +132,15 @@ func getInt64(decs, value string)(int64, error){
 	}
 	i, err := strconv.ParseInt(value, 10, 64)
 	if err != nil{
+		panic(value + "出现错误" + err.Error())
 		return dft, err
 	}
 	return i, nil
 }
 
-func getStrMap(decs, value string)(map[string]interface{}, error){
+func Str2Map(decs, value string)(map[string]interface{}, error){
 	var mapResult map[string]interface{}
 	err:= json.Unmarshal([]byte(value), &mapResult)
-	fmt.Println("map: ", mapResult)
 	return mapResult,err
 }
 
@@ -181,23 +150,24 @@ func getStrList(desc, value string)([]string, error){
 	return StrList, nil
 }
 
-func getOtherSheetInfo(Xfile *xlsx.File, keyID, valType, decs, sheetName, findID string)(interface{}, error){
+func GetOtherSheetInfo(Xfile *xlsx.File, valType, decs, cellStrValue string)(interface{}, error){
 	//keyID为唯一识别的ID标识，如"ID" 或者"id"，等索引的标识服务，excel第一行中的数据
-	fmt.Println(keyID, sheetName, findID)
+	infosMap := splitSheetInfo(cellStrValue)
+	keyID := infosMap["KeyID"]
+	SheetName := infosMap["SheetName"]
+	findID := infosMap["FindID"]
 	var result interface{}
 	var err error
 	if valType == "[]SheetInfo"{
-		fmt.Println("fine List")
-		result, err = getOtherSheetInfoList(Xfile, keyID, decs, sheetName, findID )
+		result, err = getOtherSheetInfoList(Xfile, keyID, decs, SheetName, findID )
 	}
 	if valType == "SheetInfo"{
-		fmt.Println("fine Map")
-		result, err = getOtherSheetInfoMap(Xfile, keyID, decs, sheetName, findID )
+		result, err = getOtherSheetInfoMap(Xfile, keyID, decs, SheetName, findID )
 	}
 	return result, err
 }
 
-func getOtherSheetInfoList(Xfile *xlsx.File, keyID, decs, sheetName, findID string)(interface{}, error){
+func getOtherSheetInfoList(Xfile *xlsx.File, keyID, decs, sheetName, findID string)([]interface{}, error){
 	//keyID为唯一识别的ID标识，如"ID" 或者"id"，等索引的标识服务，excel第一行中的数据
 	sheet := *Xfile.Sheet[sheetName]
 	//找出所有跟findID一样的ID
@@ -210,7 +180,6 @@ func getOtherSheetInfoList(Xfile *xlsx.File, keyID, decs, sheetName, findID stri
 	//找到ID于findId一样的并记录
 	keyIDCol := -1
 	for col:=0;col<lCols;col++{
-		fmt.Println("if this: ", keyID)
 		if sheet.Rows[0].Cells[col].String() == keyID{
 			keyIDCol = col
 			break
@@ -223,7 +192,6 @@ func getOtherSheetInfoList(Xfile *xlsx.File, keyID, decs, sheetName, findID stri
 	findIdRows := make([]int, 0)
 	for i:=4;i< lRows;i++{
 		if sheet.Rows[i].Cells[keyIDCol].String() == findID{
-			fmt.Println("找到啦： ", i)
 			findIdRows = append(findIdRows, i)
 		}
 	}
@@ -258,7 +226,7 @@ func getOtherSheetInfoList(Xfile *xlsx.File, keyID, decs, sheetName, findID stri
 	return findIDResult, nil
 }
 
-func getOtherSheetInfoMap(Xfile *xlsx.File, keyID, decs, sheetName, findID string)(interface{}, error){
+func getOtherSheetInfoMap(Xfile *xlsx.File, keyID, decs, sheetName, findID string)(map[string]interface{}, error){
 	//keyID为唯一识别的ID标识，如"ID" 或者"id"，等索引的标识服务，excel第一行中的数据
 	sheet := *Xfile.Sheet[sheetName]
 	//找出所有跟findID一样的ID
@@ -286,7 +254,7 @@ func getOtherSheetInfoMap(Xfile *xlsx.File, keyID, decs, sheetName, findID strin
 			findIDRows = append(findIDRows, i)
 		}
 	}
-	var findIDResult interface{}
+	var findIDResult map[string]interface{}
 	if len(findIDRows) == 0 {
 		return nil, errors.New(`查无 [`+ findID+`] 数据！`)
 	}else if len(findIDRows) != 1{
@@ -323,10 +291,12 @@ func changeString2Type(Xfile *xlsx.File, cellStrValue, valtype , desc string)(in
 	var value interface{}
 	var err = errors.New("")
 	err = nil
+	cellStrValue = strings.Replace(cellStrValue, " ", "", -1)
 	if checkIfNilStr(cellStrValue){
-		value = ""
+		value = getDefaultVal(valtype)
 		return value, nil
 	}
+	valtype = strings.Replace(valtype, " ", "", -1)
 	switch valtype {
 	case "[]int32":
 		value, err = getIntList(desc, cellStrValue)
@@ -339,36 +309,46 @@ func changeString2Type(Xfile *xlsx.File, cellStrValue, valtype , desc string)(in
 	case "string":
 		value = cellStrValue
 	case "mapInterface":
-		value, err = getStrMap(desc, cellStrValue)
+		value, err = Str2Map(desc, cellStrValue)
 	case "[]string":
 		value, err = getStrList(desc, cellStrValue)
 	case "[]SheetInfo":
-		infosMap := splitSheetInfo(cellStrValue)
-		value, err = getOtherSheetInfo(Xfile, infosMap["KeyID"], "[]SheetInfo", desc, infosMap["SheetName"], infosMap["FindID"])
-		fmt.Println("testinfosList: ", infosMap, value, err)
-		//value, err = getOtherSheetInfo()
+		value, err = GetOtherSheetInfo(Xfile, "[]SheetInfo", desc, cellStrValue)
 	case "SheetInfo":
-		infosMap := splitSheetInfo(cellStrValue)
-		value, err = getOtherSheetInfo(Xfile, infosMap["KeyID"], "SheetInfo", desc, infosMap["SheetName"], infosMap["FindID"])
-		fmt.Println("testinfosMap: ", infosMap, value, err)
-		//value, err = getOtherSheetInfo()
+		value, err = GetOtherSheetInfo(Xfile, "SheetInfo", desc, cellStrValue)
 	default:
 		value = cellStrValue
 	}
 	return value, err
 }
 
-func testThis(Xfile *xlsx.File){
-	t := "[]SheetInfo"
-	result, err :=getOtherSheetInfo(Xfile, "ID", t, "","Sample", "101")
-	if t == "[]SheetInfo"{
-		for i, j:= range result.([]interface{}){
-			fmt.Println(i, " : ", j, err)
-		}
+func getDefaultVal(valtype string)interface{}{
+	//对于空值设置初始值
+	valtype = strings.Replace(valtype, " ", "", -1)
+	var value interface{}
+	switch valtype {
+	case "[]int32":
+		value = 0
+	case "[]int64":
+		value = []int64{}
+	case "int":
+		value = 0
+	case "int64":
+		value = (int64)(0)
+	case "string":
+		value = ""
+	case "mapInterface":
+		value = map[string]interface{}{}
+	case "[]string":
+		value = []string{}
+	case "[]SheetInfo":
+		value = []interface{}{}
+	case "SheetInfo":
+		value = map[string]interface{}{}
+	default:
+		value = ""
 	}
-	if t == "SheetInfo"{
-		fmt.Println("map : ", result, err)
-	}
+	return value
 }
 
 func splitSheetInfo(sheetValue string)(map[string]string){
@@ -385,11 +365,11 @@ func splitSheetInfo(sheetValue string)(map[string]string){
 		panic("配置错误请检查此配置 -------> "+ sheetValue)
 	}
 	var checkParams = map[string]int{"SheetName":0, "KeyID":0, "FindID": 0}
-	infosMap[s0[0]] = s0[1]
+	infosMap[s0[0]] = strings.Replace(s0[1], " ", "", -1)  //strings.Replace(s[0], " ", "")
 	checkParams[s0[0]] = 1
-	infosMap[s1[0]] = s1[1]
+	infosMap[s1[0]] = strings.Replace(s1[1], " ", "", -1)
 	checkParams[s1[0]] = 1
-	infosMap[s2[0]] = s2[1]
+	infosMap[s2[0]] = strings.Replace(s2[1], " ", "", -1)
 	checkParams[s2[0]] = 1
 	for _,v := range checkParams{
 		if v == 0{
@@ -399,3 +379,31 @@ func splitSheetInfo(sheetValue string)(map[string]string){
 	return infosMap
 }
 
+func CheckPathExists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+func StoreWithJson(sheetName string, result interface{})error{
+	//将结果存储为json格式文件
+	b, err := json.Marshal(result)
+	if err != nil {
+		fmt.Println("json.Marshal failed:", err)
+		return err
+	}
+	fineName := "./" + sheetName + ".json"
+	f,err := os.Create(fineName)
+	defer f.Close()
+	if err !=nil {
+		log.Log("StoreJson",err.Error())
+	} else {
+		f.Write([]byte(b))
+	}
+	return nil
+}

@@ -5,5 +5,5 @@ import (
 	)
 
 func main() {
-		handler.Change()
+		handler.ExcelChanger("./example/Sample.xlsx")
 	}
