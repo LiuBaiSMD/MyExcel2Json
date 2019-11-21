@@ -2,6 +2,7 @@ package handler
 
 import (
 	"strings"
+	"os"
 )
 
 func checkIfNilStr(s string)bool{
@@ -45,18 +46,35 @@ func getDefaultVal(valtype string)interface{}{
 		value = []float64{}
 	case "[]float32":
 		value = []float32{}
+	case "percentage":
+		value = (percentage)(0)
+	case "[]percentage":
+		value = []percentage{}
 	case "string":
 		value = ""
 	case "mapInterface":
 		value = map[string]interface{}{}
 	case "[]string":
 		value = []string{}
-	case "[]SheetInfo":
+	case "[]sheetInfo":
 		value = []interface{}{}
-	case "SheetInfo":
+	case "sheetInfo":
 		value = map[string]interface{}{}
 	default:
 		value = ""
 	}
 	return value
+}
+
+//检查一个dir路径，没有则会创建
+func CheckDirOrCreate(dirPath string) error{
+	if ifExist,err :=CheckPathExists(dirPath); err != nil{
+		return err
+	}else if !ifExist{
+		err1 := os.MkdirAll(dirPath, 0777)
+		if err1!=nil{
+			return err1
+		}
+	}
+	return nil
 }

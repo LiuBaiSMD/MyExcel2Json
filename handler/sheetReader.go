@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"github.com/tealeg/xlsx"
+	"path"
 	"strings"
 	"strconv"
 	"encoding/json"
@@ -11,7 +12,7 @@ import (
 	"github.com/micro/go-micro/util/log"
 )
 
-func ExcelChanger(filePath string) {
+func ExcelChanger(jsonFilesDir ,filePath string) {
 	ifExist, _ :=  CheckPathExists(filePath)
 	if !ifExist{
 		panic("配表文件不存在请检查 ------ > "+ filePath)
@@ -31,6 +32,7 @@ func ExcelChanger(filePath string) {
 			fmt.Println("此表为子表不做处理------> ",sheet.Name)
 			continue
 		}
+		fmt.Println("\n\n\n\n", sheet.Name)
 		var sheetResult []interface{}
 		sheetResult = make([]interface{}, 0)
 		for irow, row := range sheet.Rows {
@@ -47,8 +49,8 @@ func ExcelChanger(filePath string) {
 				if len(sheet.Rows[0].Cells) < col+ 1{
 					panic("表格式错误")
 				}
-				key := sheet.Rows[0].Cells[col].String()
-				valType :=  sheet.Rows[1].Cells[col].String()
+				key := strings.Replace(sheet.Rows[0].Cells[col].String(), " ", "", -1)
+				valType :=  strings.Replace(sheet.Rows[1].Cells[col].String(), " ", "", -1)//
 				desc := sheet.Rows[2].Cells[col].String()
 				var value interface{}
 				//进行类型判断,并转换
@@ -65,11 +67,17 @@ func ExcelChanger(filePath string) {
 				fmt.Println("scan: ", test)
 			}
 		}
-		err = StoreWithJson(sheet.Name, sheetResult)
+		if len(sheetResult)==1{
+			log.Log("sheet表 -----> ["+ sheet.Name + "] 处理完毕！（只有一组数据默认处理为map）"  )
+			err = StoreWithJson(jsonFilesDir, sheet.Name, sheetResult[0])
+		}else{
+			log.Log("sheet表 -----> ["+ sheet.Name + "] 处理完毕！"  )
+			err = StoreWithJson(jsonFilesDir, sheet.Name, sheetResult)
+		}
 		if err != nil{
 			panic(err)
 		}
-		log.Log("sheet表 -----> ["+ sheet.Name + "] 处理完毕！"  )
+
 	}
 }
 
@@ -150,6 +158,64 @@ func getFloat32(decs, value string)(float32, error){
 	return (float32)(i), nil
 }
 
+func getFloat32List(decs, value string)([]float32, error){
+	var result []float32
+
+	percentStrs := strings.Split(value, "|")
+	if len(percentStrs)<1{
+		return []float32{}, nil
+	}
+	for _, v := range percentStrs{
+		i, err := strconv.ParseFloat(v, 32)
+		if err != nil{
+			panic(value + "出现错误" + err.Error())
+			return result, err
+		}
+		result = append(result, (float32)(i))
+	}
+
+	return result, nil
+}
+
+func getFloat64List(decs, value string)([]float64, error){
+	var result []float64
+
+	percentStrs := strings.Split(value, "|")
+	if len(percentStrs)<1{
+		return []float64{}, nil
+	}
+	for _, v := range percentStrs{
+		i, err := strconv.ParseFloat(v, 32)
+		if err != nil{
+			panic(value + "出现错误" + err.Error())
+			return result, err
+		}
+		result = append(result, i)
+	}
+
+	return result, nil
+}
+
+func getPercentageList(decs, value string)([]float32, error){
+	var result []float32
+	value = strings.Replace(value, "%", "", -1) //去掉百分号和空格
+	value = strings.Replace(value, " ", "", -1)
+	percentStrs := strings.Split(value, "|")
+	if len(percentStrs)<1{
+		return []float32{}, nil
+	}
+	for _, v := range percentStrs{
+		i, err := strconv.ParseFloat(v, 32)
+		if err != nil{
+			panic(value + "出现错误" + err.Error())
+			return result, err
+		}
+		result = append(result, (float32)(i)/100)
+	}
+
+	return result, nil
+}
+
 func getFloat64(decs, value string)(float64, error){
 	dft := (float64)(0)
 	if value==""{
@@ -173,6 +239,22 @@ func getStrList(desc, value string)([]string, error){
 	spliter := "|"
 	StrList := strings.Split(value, spliter)
 	return StrList, nil
+}
+
+func getPercentage(desc, value string)(float32, error){
+	value = strings.Replace(value, " ", "", -1) //去空格
+
+	if !strings.HasSuffix(value, "%"){
+		panic("该数据格式不对 -------> " + value)
+		return float32(0), nil
+	}
+	value = strings.Replace(value, "%", "", -1)
+	i, err := strconv.ParseFloat(value, 32)
+	if err != nil{
+		panic(value + "出现错误" + err.Error())
+		return float32(0), err
+	}
+	return (float32)(i)/100, nil
 }
 
 func GetOtherSheetInfo(Xfile *xlsx.File, valType, decs, cellStrValue string)(interface{}, error){
@@ -311,18 +393,19 @@ func getOtherSheetInfoMap(Xfile *xlsx.File, keyID, decs, sheetName, findID strin
 	return findIDResult, nil
 }
 
-func changeString2Type(Xfile *xlsx.File, cellStrValue, valtype , desc string)(interface{}, error){
+func changeString2Type(Xfile *xlsx.File, cellStrValue, valType , desc string)(interface{}, error){
 	//进行类型判断
 	var value interface{}
 	var err = errors.New("")
 	err = nil
 	cellStrValue = strings.Replace(cellStrValue, " ", "", -1)
 	if checkIfNilStr(cellStrValue){
-		value = getDefaultVal(valtype)
+		value = getDefaultVal(valType)
 		return value, nil
 	}
-	valtype = strings.Replace(valtype, " ", "", -1)
-	switch valtype {
+	valType = strings.Replace(valType, " ", "", -1)
+	fmt.Println(valType)
+	switch valType {
 	case "[]int32":
 		value, err = getIntList(desc, cellStrValue)
 	case "[]int64":
@@ -335,26 +418,39 @@ func changeString2Type(Xfile *xlsx.File, cellStrValue, valtype , desc string)(in
 		value = cellStrValue
 	case "float32":
 		value, err = getFloat32(desc, cellStrValue)
+	case "[]float32":
+		value, err = getFloat32List(desc, cellStrValue)
 	case "float64":
 		value, err = getFloat64(desc, cellStrValue)
+	case "[]float64":
+		value, err = getFloat64List(desc, cellStrValue)
+	case "percentage":
+		value, err = getPercentage(desc, cellStrValue)
+	case "[]percentage":
+		value, err = getPercentageList(desc, cellStrValue)
 	case "mapInterface":
 		value, err = Str2Map(desc, cellStrValue)
 	case "[]string":
 		value, err = getStrList(desc, cellStrValue)
-	case "[]SheetInfo":
+	case "[]sheetInfo":
+		fmt.Println("[]sheetinfo 来了", valType)
 		value, err = GetOtherSheetInfo(Xfile, "[]SheetInfo", desc, cellStrValue)
-	case "SheetInfo":
+	case "sheetInfo":
+		fmt.Println("sheetinfo 来了", valType)
 		value, err = GetOtherSheetInfo(Xfile, "SheetInfo", desc, cellStrValue)
 	default:
+		fmt.Println("你确定有这个类型？", valType)
 		value = cellStrValue
 	}
 	return value, err
 }
 
 func splitSheetInfo(sheetValue string)(map[string]string){
+	fmt.Println("splitSheetInfo -------> " + sheetValue)
 	sheetValue = strings.Replace(sheetValue, " ", "", -1)
 	s := strings.Split(sheetValue, "|")
 	if len(s)!=3{
+		fmt.Println("配置错误，请检查-------> " + sheetValue)
 		panic("配置错误请检查此配置 -------> "+ sheetValue)
 	}
 	infosMap := make(map[string]string)
@@ -364,30 +460,29 @@ func splitSheetInfo(sheetValue string)(map[string]string){
 	if len(s0) !=2 && len(s1)!=2 && len(s2)!=2{
 		panic("配置错误请检查此配置 -------> "+ sheetValue)
 	}
-	var checkParams = map[string]int{"SheetName":0, "KeyID":0, "FindID": 0}
 	infosMap[s0[0]] = strings.Replace(s0[1], " ", "", -1)  //strings.Replace(s[0], " ", "")
-	checkParams[s0[0]] = 1
 	infosMap[s1[0]] = strings.Replace(s1[1], " ", "", -1)
-	checkParams[s1[0]] = 1
 	infosMap[s2[0]] = strings.Replace(s2[1], " ", "", -1)
-	checkParams[s2[0]] = 1
-	for _,v := range checkParams{
-		if v == 0{
+	fmt.Println("infosMaps: -----> ", infosMap)
+	for _,v := range infosMap{
+		if v == ""{
 			panic("配置错误请检查此配置 -------> "+ sheetValue)
 		}
 	}
 	return infosMap
 }
 
-func StoreWithJson(sheetName string, result interface{})error{
+func StoreWithJson(dirPath, sheetName string, result interface{})error{
 	//将结果存储为json格式文件
+	CheckDirOrCreate(dirPath)
 	b, err := json.Marshal(result)
 	if err != nil {
 		fmt.Println("json.Marshal failed:", err)
 		return err
 	}
-	fineName := "./" + sheetName + ".json"
-	f,err := os.Create(fineName)
+	fileName := path.Join(dirPath, sheetName + ".json")
+	//fineName := "./" + sheetName + ".json"
+	f,err := os.Create(fileName)
 	defer f.Close()
 	if err !=nil {
 		log.Log("StoreJson",err.Error())
