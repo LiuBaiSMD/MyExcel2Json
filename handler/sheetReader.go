@@ -51,6 +51,9 @@ func ExcelChanger(jsonFilesDir ,filePath string) {
 				}
 				key := strings.Replace(sheet.Rows[0].Cells[col].String(), " ", "", -1)
 				valType :=  strings.Replace(sheet.Rows[1].Cells[col].String(), " ", "", -1)//
+				if strings.HasPrefix(valType, "@"){
+					continue
+				}
 				desc := sheet.Rows[2].Cells[col].String()
 				var value interface{}
 				//进行类型判断,并转换
@@ -82,7 +85,7 @@ func ExcelChanger(jsonFilesDir ,filePath string) {
 }
 
 func getIntList(decs, value string)([]int, error){
-	Spliter := ","
+	Spliter := "|"
 	strList := strings.Split(value, Spliter)
 	var intList []int
 	intList = make([]int, 0)
@@ -101,7 +104,7 @@ func getIntList(decs, value string)([]int, error){
 }
 
 func getInt64List(decs, value string)([]int64, error){
-	Spliter := ","
+	Spliter := "|"
 	strList := strings.Split(value, Spliter)
 	var intList []int64
 	intList = make([]int64, 0)
